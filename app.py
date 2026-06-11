@@ -1,41 +1,75 @@
-from flask import Flask, request, Response
+import os
 import requests
+from flask import Flask, request, Response
 
 app = Flask(__name__)
 
-# 🔐 BURAYA SONRADAN EKLEME YAPACAKSIN
-ALLOWED_TARGETS = [
+# ==========================================
+# ⚙️ GENEL AYARLAR (Buradan kolayca düzenleyebilirsiniz)
+# ==========================================
+
+# 1. İzin Verilen Marzban Panel Adresleri (Çoklu Liste)
+ALLOWED_PANELS = [
     "207.180.239.205:8627",
-    "sub1.domain.com:8000",
-    "sub2.domain.com:8000",
-    "sub3.domain.com:8000",
-    "sub4.domain.com:8000",
+    "sub.togreben.xyz",
+    "sub.yadow.xyz",
+    "lite.togreben.xyz",
+    "sub.rusaopfkr.xyz"
 ]
 
-@app.route("/sub")
-def sub():
+# 2. Happ / Hiddify Uygulama Ayarları
+HAPP_SETTINGS = {
+    "profile-title": "Name VPN",                        
+    "profile-web-page-url": "https://google.com",       
+    "profile-update-interval": "24",                    
+    "support-url": ""                                   
+}
 
-    url = request.args.get("url")
-    if not url:
-        return "missing url", 400
+# 3. Müşterilere Gösterilecek Duyuru Mesajı
+ANNOUNCE_MESSAGE = "#announce: base64:SGFwcCB0aGUgYmVzdCE="
 
-    # 🔐 whitelist kontrol
-    if not any(x in url for x in ALLOWED_TARGETS):
-        return "blocked", 403
+# ==========================================
+# 🚀 KODUN İŞLEYİŞ KISMI (Buradan sonrasına dokunmanıza gerek yok)
+# ==========================================
+
+@app.route('/sub', methods=['GET'])
+def dynamic_proxy():
+    target_url = request.args.get('url')
+    
+    if not target_url:
+        return "Hata: Lütfen bir URL belirtin (Örn: ?url=http...)", 400
+
+    # Güvenlik Kontrolü: Gelen URL, listedeki domainlerden birini içeriyor mu?
+    is_allowed = any(panel in target_url for panel in ALLOWED_PANELS)
+    if not is_allowed:
+         return "Erişim Reddedildi: Sadece yetkili sunuculara izin var.", 403
 
     try:
-        r = requests.get(url, timeout=10)
+        resp = requests.get(target_url, timeout=10)
+        
+        forwarded_headers = {}
+        for key, value in resp.headers.items():
+            if key.lower() not in ['content-encoding', 'content-length', 'transfer-encoding', 'connection']:
+                forwarded_headers[key] = value
+                
+        for key, value in HAPP_SETTINGS.items():
+            if value:  
+                forwarded_headers[key] = value
 
-        excluded = ["content-encoding", "content-length", "transfer-encoding", "connection"]
+        content = resp.text
+        
+        if ANNOUNCE_MESSAGE:
+            content = ANNOUNCE_MESSAGE + "\n" + content
 
-        headers = {k: v for k, v in r.headers.items() if k.lower() not in excluded}
-
-        return Response(r.content, status=r.status_code, headers=headers)
-
+        return Response(
+            content, 
+            status=resp.status_code, 
+            headers=forwarded_headers,
+            content_type=resp.headers.get('Content-Type')
+        )
     except Exception as e:
-        return str(e), 500
+        return f"Proxy Hatası: {str(e)}", 500
 
-
-@app.route("/")
-def home():
-    return "OK"
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port)
