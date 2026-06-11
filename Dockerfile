@@ -1,9 +1,9 @@
-FROM python:3.11-slim
+FROM nginx:alpine
 
-WORKDIR /app
+# Nginx ayar dosyamızı içeri kopyalıyoruz
+COPY nginx.conf /etc/nginx/nginx.conf
 
-COPY . .
+# Cloud Run varsayılan portu
+EXPOSE 8080
 
-RUN pip install -r requirements.txt
-
-CMD exec gunicorn --bind :8080 app:app
+CMD ["nginx", "-g", "daemon off;"]
