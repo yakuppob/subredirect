@@ -44,8 +44,10 @@ def dynamic_proxy():
     if not is_allowed:
          return "Erişim Reddedildi: Sadece yetkili sunuculara izin var.", 403
 
-    try:
-        resp = requests.get(target_url, timeout=10)
+   try:
+        # Gelen orijinal User-Agent'ı (Hiddify/v2rayNG) alıp doğrudan Marzban'a iletiyoruz
+        client_headers = {"User-Agent": request.headers.get("User-Agent", "HiddifyNext/1.0")}
+        resp = requests.get(target_url, headers=client_headers, timeout=15)
         
         forwarded_headers = {}
         for key, value in resp.headers.items():
