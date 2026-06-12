@@ -14,7 +14,7 @@ ALLOWED_PANELS = [
     "sub.togreben.xyz",
     "sub.yadow.xyz",
     "lite.yadow.xyz",
-    "sub.rusaopfkr.xyz"
+    "panel.fkjwox.xyz:8000"
 ]
 
 # 2. Happ / Hiddify Uygulama Ayarları
