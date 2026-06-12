@@ -1,14 +1,14 @@
 import os
 import requests
+import base64
 from flask import Flask, request, Response
 
 app = Flask(__name__)
 
 # ==========================================
-# ⚙️ GENEL AYARLAR (Buradan kolayca düzenleyebilirsiniz)
+# ⚙️ GENEL AYARLAR
 # ==========================================
 
-# 1. İzin Verilen Marzban Panel Adresleri (Çoklu Liste)
 ALLOWED_PANELS = [
     "207.180.239.205:8627",
     "sub.togreben.xyz",
@@ -17,19 +17,15 @@ ALLOWED_PANELS = [
     "panel.fkjwox.xyz:8000"
 ]
 
-# 2. Happ / Hiddify Uygulama Ayarları
-HAPP_SETTINGS = {
-    "profile-title": "Name VPN",                        
-    "profile-web-page-url": "https://google.com",       
-    "profile-update-interval": "24",                    
-    "support-url": ""                                   
-}
-
-# 3. Müşterilere Gösterilecek Duyuru Mesajı
-ANNOUNCE_MESSAGE = "#announce: base64:SGFwcCB0aGUgYmVzdCE="
+HAPP_SETTINGS = [
+    "#profile-title: Name VPN",
+    "#profile-web-page-url: https://google.com",
+    "#profile-update-interval: 24",
+    "#announce: base64:SGFwcCB0aGUgYmVzdCE="
+]
 
 # ==========================================
-# 🚀 KODUN İŞLEYİŞ KISMI (Buradan sonrasına dokunmanıza gerek yok)
+# 🚀 KODUN İŞLEYİŞ KISMI
 # ==========================================
 
 @app.route('/sub', methods=['GET'])
@@ -37,37 +33,45 @@ def dynamic_proxy():
     target_url = request.args.get('url')
     
     if not target_url:
-        return "Hata: Lütfen bir URL belirtin (Örn: ?url=http...)", 400
+        return "Hata: Lütfen bir URL belirtin", 400
 
-    # Güvenlik Kontrolü: Gelen URL, listedeki domainlerden birini içeriyor mu?
     is_allowed = any(panel in target_url for panel in ALLOWED_PANELS)
     if not is_allowed:
-        return "Erişim Reddedildi: Sadece yetkili sunuculara izin var.", 403
+        return "Erişim Reddedildi.", 403
 
     try:
-        # Gelen orijinal User-Agent'ı (Hiddify/v2rayNG) alıp doğrudan Marzban'a iletiyoruz
         client_headers = {"User-Agent": request.headers.get("User-Agent", "HiddifyNext/1.0")}
         resp = requests.get(target_url, headers=client_headers, timeout=15)
         
-        forwarded_headers = {}
-        for key, value in resp.headers.items():
-            if key.lower() not in ['content-encoding', 'content-length', 'transfer-encoding', 'connection']:
-                forwarded_headers[key] = value
-                
-        for key, value in HAPP_SETTINGS.items():
-            if value:  
-                forwarded_headers[key] = value
+        # 1. Marzban'dan kullanıcı kotasını (Header'dan) çek
+        userinfo = resp.headers.get('subscription-userinfo') or resp.headers.get('Subscription-Userinfo')
 
-        content = resp.text
+        # 2. Gelen veriyi (Base64) düz metne çevir
+        raw_b64 = resp.text.strip()
+        try:
+            decoded_text = base64.b64decode(raw_b64).decode('utf-8')
+        except Exception:
+            # Eğer zaten çözülmüş düz metinse aynen kullan
+            decoded_text = raw_b64
+
+        # 3. Yeni içeriği oluştur (Ayarlar + Kota + Vless/Vmess Kodları)
+        output_lines = HAPP_SETTINGS.copy()
         
-        if ANNOUNCE_MESSAGE:
-            content = ANNOUNCE_MESSAGE + "\n" + content
+        if userinfo:
+            output_lines.append(f"#subscription-userinfo: {userinfo}")
+            
+        output_lines.append(decoded_text)
+        
+        # Tüm satırları birleştir
+        final_content = "\n".join(output_lines)
+
+        # 4. Her şeyi yeniden Base64 olarak şifrele (Happ'ın beklediği format)
+        encoded_output = base64.b64encode(final_content.encode('utf-8')).decode('utf-8')
 
         return Response(
-            content, 
-            status=resp.status_code, 
-            headers=forwarded_headers,
-            content_type=resp.headers.get('Content-Type')
+            encoded_output, 
+            status=200, 
+            content_type="text/plain; charset=utf-8"
         )
     except Exception as e:
         return f"Proxy Hatası: {str(e)}", 500
