@@ -46,32 +46,47 @@ def dynamic_proxy():
         # 1. Marzban'dan kullanıcı kotasını (Header'dan) çek
         userinfo = resp.headers.get('subscription-userinfo') or resp.headers.get('Subscription-Userinfo')
 
-        # 2. Gelen veriyi (Base64) düz metne çevir
+        # 2. Gelen veriyi çöz
         raw_b64 = resp.text.strip()
         try:
             decoded_text = base64.b64decode(raw_b64).decode('utf-8')
         except Exception:
-            # Eğer zaten çözülmüş düz metinse aynen kullan
             decoded_text = raw_b64
 
-        # 3. Yeni içeriği oluştur (Ayarlar + Kota + Vless/Vmess Kodları)
+        # 3. CRITICAL FIX: Sadece gerçek VPN protokol bağlantılarını ayıkla (Çakışmayı önler)
+        lines = decoded_text.splitlines()
+        valid_configs = []
+        protocols = ("vless://", "vmess://", "trojan://", "ss://", "ssr://", "tuic://", "hy2://", "hysteria2://")
+        
+        for line in lines:
+            line_stripped = line.strip()
+            if line_stripped.startswith(protocols):
+                valid_configs.append(line_stripped)
+
+        # 4. Yeni temiz içeriği oluştur
         output_lines = HAPP_SETTINGS.copy()
         
         if userinfo:
             output_lines.append(f"#subscription-userinfo: {userinfo}")
             
-        output_lines.append(decoded_text)
+        output_lines.extend(valid_configs)
         
-        # Tüm satırları birleştir
+        # Tüm satırları birleştir ve Base64 olarak şifrele
         final_content = "\n".join(output_lines)
-
-        # 4. Her şeyi yeniden Base64 olarak şifrele (Happ'ın beklediği format)
         encoded_output = base64.b64encode(final_content.encode('utf-8')).decode('utf-8')
+
+        # 5. Güncelleme butonunun sorunsuz çalışması için Header'ları ayarla
+        response_headers = {
+            "Content-Type": "text/plain; charset=utf-8"
+        }
+        if userinfo:
+            response_headers["subscription-userinfo"] = userinfo
+            response_headers["Subscription-Userinfo"] = userinfo
 
         return Response(
             encoded_output, 
             status=200, 
-            content_type="text/plain; charset=utf-8"
+            headers=response_headers
         )
     except Exception as e:
         return f"Proxy Hatası: {str(e)}", 500
